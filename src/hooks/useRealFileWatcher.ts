@@ -82,7 +82,8 @@ export function useRealFileWatcher() {
     const found: TrameError[] = [];
     for (let i = 0; i < lines.length; i++) {
     for (const rule of rules) {
-  
+
+      console.log("Règle:", rule.keyword);
       if (
         lines[i]
           .toLowerCase()
