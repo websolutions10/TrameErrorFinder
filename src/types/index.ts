@@ -2,6 +2,11 @@ export type ErrorSeverity = 'critical' | 'major' | 'minor' | 'warning';
 
 export type ChartMode = 'surveillance' | 'fichier';
 
+export interface MonitoringRule {
+  keyword: string;
+  severity: ErrorSeverity;
+}
+
 export interface TrameError {
   id: string;
   timestamp: Date;
