@@ -1,6 +1,21 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { TrameError, TrameErrorCount, ErrorStats, ErrorSeverity, ChartMode } from '../types';
 
+const [rules, setRules] = useState(() => {
+  const saved = localStorage.getItem('monitoringRules');
+
+  if (saved) {
+    return JSON.parse(saved);
+  }
+
+  return [
+    {
+      keyword: 'errordialogue',
+      severity: 'critical'
+    }
+  ];
+});
+
 const POLL_INTERVAL = 1000;
 
 function classifySeverity(line: string): ErrorSeverity {
