@@ -35,7 +35,7 @@ export default function App() {
   const config: ModuleSpyConfig = {
     endpoint: fileName || '(non sélectionné)',
     pollingInterval: 1000,
-    trameId: 'errordialogue',
+    trameId: 'poire',
     moduleName: 'Surveillance des erreurs de trame',
     connectionStatus: fileContent ? 'connected' : 'disconnected',
   };
@@ -66,7 +66,7 @@ export default function App() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
             <span className="text-cyan-400 text-sm">Mot-clé :</span>
-            <code className="text-cyan-300 font-mono text-sm font-bold">errordialogue</code>
+            <code className="text-cyan-300 font-mono text-sm font-bold">poire</code>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={handleExport} disabled={errors.length === 0}
@@ -141,7 +141,7 @@ export default function App() {
             <div className="flex items-center gap-4">
               <span>Surveillance des erreurs de trame</span>
               <span>•</span>
-              <span>Détection : "errordialogue"</span>
+              <span>Détection : "poire"</span>
               {fileName && <><span>•</span><span>{fileName}</span></>}
             </div>
             <div>
