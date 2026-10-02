@@ -27,7 +27,7 @@ export function SeverityGauge({ stats }: SeverityGaugeProps) {
 
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
-      <h2 className="text-white font-semibold text-lg mb-4">Répartition & Santé</h2>
+      <h2 className="text-white font-semibold text-lg mb-4">Analyse des erreurs</h2>
 
       {/* Health score */}
       <div className="flex items-center justify-center mb-5">
