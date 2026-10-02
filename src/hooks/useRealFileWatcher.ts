@@ -80,8 +80,20 @@ export function useRealFileWatcher() {
     const lines = content.split('\n');
     const found: TrameError[] = [];
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].toLowerCase().includes(KEYWORD)) {
-        found.push(makeError(lines[i], i + 1));
+      for (const rule of rules) {
+          if (
+            lines[i]
+              .toLowerCase()
+              .includes(rule.keyword.toLowerCase())
+          ) {
+            found.push({
+              ...makeError(lines[i], i + 1),
+              severity: rule.severity
+            });
+        
+            break;
+          }
+        }
       }
     }
     setFileContent(content);
@@ -218,6 +230,12 @@ export function useRealFileWatcher() {
   }, [stopWatching]);
 
   useEffect(() => { return () => { if (timerRef.current) clearInterval(timerRef.current); }; }, []);
+  useEffect(() => {
+    localStorage.setItem(
+      'monitoringRules',
+      JSON.stringify(rules)
+    );
+  }, [rules]);
 
   const chartData = chartMode === 'surveillance' ? survData : fileData;
 
@@ -227,5 +245,8 @@ export function useRealFileWatcher() {
     isWatching, isPaused, fileName, lastModified, lineCount,
     fileContent, errors, chartData, stats, chartMode,
     setChartMode, selectFile, stopWatching, togglePause, forceRefresh, clearAll,
+    rules,
+    setRules,
+    ``
   };
 }
