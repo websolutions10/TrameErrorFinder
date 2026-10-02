@@ -1,20 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { TrameError, TrameErrorCount, ErrorStats, ErrorSeverity, ChartMode } from '../types';
 
-const [rules, setRules] = useState(() => {
-  const saved = localStorage.getItem('monitoringRules');
 
-  if (saved) {
-    return JSON.parse(saved);
-  }
-
-  return [
-    {
-      keyword: 'errordialogue',
-      severity: 'critical'
-    }
-  ];
-});
 
 const POLL_INTERVAL = 1000;
 
@@ -59,7 +46,21 @@ export function useRealFileWatcher() {
   const [chartMode, setChartMode] = useState<ChartMode>('surveillance');
   const [survData, setSurvData] = useState<TrameErrorCount[]>([]);
   const [fileData, setFileData] = useState<TrameErrorCount[]>([]);
+  const [rules, setRules] = useState(() => {
+  const saved = localStorage.getItem('monitoringRules');
 
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  
+    return [
+      {
+        keyword: 'errordialogue',
+        severity: 'critical'
+      }
+    ];
+  });
+  
   const handleRef = useRef<FileSystemFileHandle | null>(null);
   const timerRef = useRef<number | null>(null);
   const prevContent = useRef('');
@@ -80,23 +81,25 @@ export function useRealFileWatcher() {
     const lines = content.split('\n');
     const found: TrameError[] = [];
     for (let i = 0; i < lines.length; i++) {
-      for (const rule of rules) {
-          if (
-            lines[i]
-              .toLowerCase()
-              .includes(rule.keyword.toLowerCase())
-          ) {
-            found.push({
-              ...makeError(lines[i], i + 1),
-              severity: rule.severity
-            });
-        
-            break;
-          }
-        }
+    for (const rule of rules) {
+  
+      if (
+        lines[i]
+          .toLowerCase()
+          .includes(rule.keyword.toLowerCase())
+      ) {
+  
+        found.push({
+          ...makeError(lines[i], i + 1),
+          severity: rule.severity
+        });
+  
+        break;
       }
     }
-    setFileContent(content);
+  }
+  
+  setFileContent(content);
     setErrors(found);
     const now = new Date();
     const nonEmpty = lines.filter(l => l.trim().length > 0).length;
@@ -120,7 +123,7 @@ export function useRealFileWatcher() {
     setSurvData([...survHistory.current]);
     prevCounts.current = { critical: cc, major: mc, minor: nc, warning: wc };
     prevContent.current = content;
-  }, []);
+  }, [rules]);
 
   // === Native API (Chrome/Edge ouverts directement) ===
   const selectFileNative = useCallback(async () => {
@@ -247,6 +250,5 @@ export function useRealFileWatcher() {
     setChartMode, selectFile, stopWatching, togglePause, forceRefresh, clearAll,
     rules,
     setRules,
-    ``
   };
 }
