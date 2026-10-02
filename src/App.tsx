@@ -10,32 +10,36 @@ import type { ModuleSpyConfig } from './types';
 
 export default function App() {
   const {
-    hasNativeAPI,
-    fallbackMode,
-    isWatching,
-    isPaused,
-    fileName,
-    lastModified,
-    lineCount,
-    fileContent,
-    errors,
-    chartData,
-    stats,
-    chartMode,
-    setChartMode,
-    selectFile,
-    stopWatching,
-    togglePause,
-    forceRefresh,
-    clearAll,
-  } = useRealFileWatcher();
+  hasNativeAPI,
+  fallbackMode,
+  isWatching,
+  isPaused,
+  fileName,
+  lastModified,
+  lineCount,
+  fileContent,
+  errors,
+  chartData,
+  stats,
+  chartMode,
+  setChartMode,
+  selectFile,
+  stopWatching,
+  togglePause,
+  forceRefresh,
+  clearAll,
+
+  rules,
+  setRules,
+
+} = useRealFileWatcher();
 
   const isActive = isWatching && !isPaused && !fallbackMode;
 
   const config: ModuleSpyConfig = {
     endpoint: fileName || '(non sélectionné)',
     pollingInterval: 1000,
-    trameId: 'errordialogue',
+    trameId: rules.map(r => r.keyword).join(', '),
     moduleName: 'Surveillance des erreurs de trame',
     connectionStatus: fileContent ? 'connected' : 'disconnected',
   };
@@ -64,21 +68,97 @@ export default function App() {
       <div className="flex-1 p-5 space-y-5">
         {/* Barre de contrôle */}
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-            <span className="text-cyan-400 text-sm">Mot-clé :</span>
-            <code className="text-cyan-300 font-mono text-sm font-bold">errordialogue</code>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleExport} disabled={errors.length === 0}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-              <Download className="w-4 h-4" />Exporter CSV
-            </button>
-            <button onClick={clearAll}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all">
-              <Trash2 className="w-4 h-4" />RAZ
-            </button>
-          </div>
-        </div>
+
+  <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3 min-w-[420px]">
+
+    <p className="text-cyan-400 text-sm mb-2 font-semibold">
+      Mots-clés surveillés
+    </p>
+
+    {rules.map((rule, index) => (
+
+      <div key={index} className="flex gap-2 mb-2">
+
+        <input
+          value={rule.keyword}
+          onChange={(e) => {
+            const updated = [...rules];
+            updated[index].keyword = e.target.value;
+            setRules(updated);
+          }}
+          placeholder="Mot-clé"
+          className="bg-slate-800 border border-slate-600 px-2 py-1 rounded text-white flex-1"
+        />
+
+        <select
+          value={rule.severity}
+          onChange={(e) => {
+            const updated = [...rules];
+            updated[index].severity = e.target.value as any;
+            setRules(updated);
+          }}
+          className="bg-slate-800 border border-slate-600 px-2 py-1 rounded text-white"
+        >
+          <option value="critical">Critique</option>
+          <option value="major">Majeure</option>
+          <option value="minor">Mineure</option>
+          <option value="warning">Avertissement</option>
+        </select>
+
+        <button
+          onClick={() => {
+            const updated = [...rules];
+            updated.splice(index, 1);
+            setRules(updated);
+          }}
+          className="px-2 bg-red-600 rounded"
+        >
+          X
+        </button>
+
+      </div>
+    ))}
+
+    <button
+      onClick={() =>
+        setRules([
+          ...rules,
+          {
+            keyword: '',
+            severity: 'minor'
+          }
+        ])
+      }
+      className="px-3 py-1 bg-cyan-600 rounded text-sm"
+    >
+      + Ajouter
+    </button>
+
+  </div>
+
+  <div className="flex items-center gap-3">
+
+    <button
+      onClick={handleExport}
+      disabled={errors.length === 0}
+      className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <Download className="w-4 h-4" />
+      Exporter CSV
+    </button>
+
+    <button
+      onClick={clearAll}
+      className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all"
+    >
+      <Trash2 className="w-4 h-4" />
+      RAZ
+    </button>
+
+  </div>
+
+</div>
+
 
         {/* Sélection fichier */}
         <RealFileSelector
@@ -141,7 +221,9 @@ export default function App() {
             <div className="flex items-center gap-4">
               <span>Surveillance des erreurs de trame</span>
               <span>•</span>
-              <span>Détection : "errordialogue"</span>
+              <span>
+              Détection : {rules.map(r => r.keyword).join(', ')}
+              </span>
               {fileName && <><span>•</span><span>{fileName}</span></>}
             </div>
             <div>
