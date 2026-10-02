@@ -13,7 +13,7 @@ export function StatusBar({ config, isRunning }: Props) {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-cyan-400" />
-          <span className="text-white font-bold text-lg tracking-wide">SURVEILLANCE ERREURS TRAME</span>
+          <span className="text-white font-bold text-lg tracking-wide">OUTIL DE SURVEILLANCE DES TRAMES D'ERREUR</span>
         </div>
         <div className="h-6 w-px bg-slate-600" />
         <span className="text-slate-400 text-sm">{config.moduleName}</span>
