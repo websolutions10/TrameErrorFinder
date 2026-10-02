@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { TrameError, TrameErrorCount, ErrorStats, ErrorSeverity, ChartMode } from '../types';
 
-const KEYWORD = 'errordialogue';
 const POLL_INTERVAL = 1000;
 
 function classifySeverity(line: string): ErrorSeverity {
