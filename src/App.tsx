@@ -192,16 +192,24 @@ export default function App() {
                 <QuickStat label="Nouvelles erreurs" value={stats.errorRate.toString()}
                   color={stats.errorRate > 0 ? 'text-red-400' : 'text-slate-400'} pulse={stats.errorRate > 0} />
               </div>
+
+              {/* Sous le graphique : analyse + journal */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                <div className="lg:col-span-1">
+                  <SeverityGauge stats={stats} />
+                </div>
+                {errors.length > 0 && (
+                  <div className="lg:col-span-2 min-w-0">
+                    <ErrorLog errors={errors} compact />
+                  </div>
+                )}
+              </div>
             </div>
             <div className="xl:col-span-1 space-y-5">
-              <SeverityGauge stats={stats} />
               <StatsPanel stats={stats} />
             </div>
           </div>
         )}
-
-        {/* Journal des erreurs */}
-        {errors.length > 0 && <ErrorLog errors={errors} />}
 
         {/* État vide */}
         {errors.length === 0 && !fileContent && (
