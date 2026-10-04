@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { TrameError, TrameErrorCount, ErrorStats, ErrorSeverity, ChartMode } from '../types';
+import type { TrameError, TrameErrorCount, ErrorStats, ErrorSeverity, ChartMode, MonitoringRule } from '../types';
 
 
 
@@ -13,17 +13,17 @@ function classifySeverity(line: string): ErrorSeverity {
   return 'minor';
 }
 
-function makeError(line: string, lineNumber: number): TrameError {
+function makeError(line: string, lineNumber: number, keyword: string): TrameError {
   return {
     id: `ERR-${lineNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: new Date(),
-    errorCode: 'ERR_DIALOGUE',
+    errorCode: keyword.toUpperCase().slice(0, 14),
     description: line.trim().substring(0, 150),
     severity: classifySeverity(line),
     trameId: `L${String(lineNumber).padStart(5, '0')}`,
     fieldPosition: lineNumber,
     expectedValue: '—',
-    receivedValue: 'errordialogue',
+    receivedValue: keyword,
     source: 'fichier local',
   };
 }
@@ -46,7 +46,7 @@ export function useRealFileWatcher() {
   const [chartMode, setChartMode] = useState<ChartMode>('surveillance');
   const [survData, setSurvData] = useState<TrameErrorCount[]>([]);
   const [fileData, setFileData] = useState<TrameErrorCount[]>([]);
-  const [rules, setRules] = useState(() => {
+  const [rules, setRules] = useState<MonitoringRule[]>(() => {
   const saved = localStorage.getItem('monitoringRules');
 
     if (saved) {
@@ -61,6 +61,10 @@ export function useRealFileWatcher() {
     ];
   });
   
+  // Toujours la dernière version des règles (évite les closures périmées dans setInterval)
+  const rulesRef = useRef(rules);
+  rulesRef.current = rules;
+
   const handleRef = useRef<FileSystemFileHandle | null>(null);
   const timerRef = useRef<number | null>(null);
   const prevContent = useRef('');
@@ -76,30 +80,22 @@ export function useRealFileWatcher() {
 
   const hasNativeAPI = typeof window !== 'undefined' && 'showOpenFilePicker' in window;
 
-  const parseContent = useCallback((content: string) => {
-    if (content === prevContent.current) return;
+  const parseContent = useCallback((content: string, force = false) => {
+    if (!force && content === prevContent.current) return;
+    const currentRules = rulesRef.current;
     const lines = content.split('\n');
     const found: TrameError[] = [];
     for (let i = 0; i < lines.length; i++) {
-    for (const rule of rules) {
-
-      console.log("Règle:", rule.keyword);
-      if (
-        lines[i]
-          .toLowerCase()
-          .includes(rule.keyword.toLowerCase())
-      ) {
-  
-        found.push({
-          ...makeError(lines[i], i + 1),
-          severity: rule.severity
-        });
-  
-        break;
+      const lower = lines[i].toLowerCase();
+      for (const rule of currentRules) {
+        if (!rule.keyword.trim()) continue; // ignore les règles vides
+        if (lower.includes(rule.keyword.toLowerCase())) {
+          found.push({ ...makeError(lines[i], i + 1, rule.keyword), severity: rule.severity });
+          break;
+        }
       }
     }
-  }
-  
+
   setFileContent(content);
     setErrors(found);
     const now = new Date();
@@ -124,7 +120,7 @@ export function useRealFileWatcher() {
     setSurvData([...survHistory.current]);
     prevCounts.current = { critical: cc, major: mc, minor: nc, warning: wc };
     prevContent.current = content;
-  }, [rules]);
+  }, []);
 
   // === Native API (Chrome/Edge ouverts directement) ===
   const selectFileNative = useCallback(async () => {
@@ -234,6 +230,20 @@ export function useRealFileWatcher() {
   }, [stopWatching]);
 
   useEffect(() => { return () => { if (timerRef.current) clearInterval(timerRef.current); }; }, []);
+  // Quand les mots-clés changent : on ré-analyse le contenu déjà chargé
+  // (sinon rien ne se passe tant que le fichier n'est pas modifié)
+  useEffect(() => {
+    if (!prevContent.current) return;
+    const t = window.setTimeout(() => {
+      const content = prevContent.current;
+      prevTotal.current = 0;
+      prevCounts.current = { critical: 0, major: 0, minor: 0, warning: 0 };
+      survHistory.current = []; fileHistory.current = [];
+      parseContent(content, true);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [rules, parseContent]);
+
   useEffect(() => {
     localStorage.setItem(
       'monitoringRules',
