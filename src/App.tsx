@@ -170,6 +170,7 @@ export default function App() {
           errorCount={errors.length}
           fallbackMode={fallbackMode}
           hasNativeAPI={hasNativeAPI}
+          keywords={rules.map(r => r.keyword.trim()).filter(Boolean)}
           onSelectFile={selectFile}
           onStopWatching={stopWatching}
           onTogglePause={togglePause}
