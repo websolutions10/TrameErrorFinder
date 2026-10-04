@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { ErrorStats } from '../types';
 
 interface SeverityGaugeProps {
@@ -13,11 +15,29 @@ export function SeverityGauge({ stats }: SeverityGaugeProps) {
     { label: 'Warning', count: stats.warningCount, color: '#06b6d4', pct: (stats.warningCount / total) * 100 },
   ];
 
-  // Calcul du score de santé (0-100, 100 = pas d'erreurs critiques)
-  const healthScore = Math.max(
-    0,
-    100 - stats.criticalCount * 10 - stats.majorCount * 3 - stats.minorCount * 1 - stats.warningCount * 0.2
-  );
+  // Score de santé : gravité pondérée par ligne analysée, convertie en note 0-100.
+  // Contrairement à un total brut, il ne s'écrase pas à 0 sur un gros fichier.
+  const weighted =
+    stats.criticalCount * 10 + stats.majorCount * 3 + stats.minorCount * 1 + stats.warningCount * 0.2;
+  const density = stats.tramesAnalyzed > 0 ? weighted / stats.tramesAnalyzed : 0;
+  const K = 2; // sensibilité : plus K est grand, plus le score chute vite
+  const healthScore = 100 * Math.exp(-K * density);
+
+  // Tendance : on compare le score actuel à celui de quelques relectures plus tôt
+  const scoreHistory = useRef<number[]>([]);
+  const [trend, setTrend] = useState<'up' | 'down' | 'flat'>('flat');
+  useEffect(() => {
+    if (stats.tramesAnalyzed === 0) {
+      scoreHistory.current = [];
+      setTrend('flat');
+      return;
+    }
+    const h = [...scoreHistory.current, healthScore].slice(-6);
+    scoreHistory.current = h;
+    if (h.length < 3) { setTrend('flat'); return; }
+    const diff = h[h.length - 1] - h[0];
+    setTrend(diff > 2 ? 'up' : diff < -2 ? 'down' : 'flat');
+  }, [stats, healthScore]);
 
   const healthColor =
     healthScore > 70 ? '#10b981' : healthScore > 40 ? '#f59e0b' : '#ef4444';
@@ -68,6 +88,25 @@ export function SeverityGauge({ stats }: SeverityGaugeProps) {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Tendance + explication du score */}
+      <div className="text-center mb-5 -mt-2">
+        <div
+          className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+            trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-red-400' : 'text-slate-400'
+          }`}
+        >
+          {trend === 'up' ? <TrendingUp className="w-3.5 h-3.5" /> : trend === 'down' ? <TrendingDown className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
+          {trend === 'up' ? 'Amélioration' : trend === 'down' ? 'Dégradation' : 'Stable'}
+        </div>
+        <p className="text-slate-500 text-[10px] mt-1.5 leading-snug">
+          Gravité pondérée par ligne analysée<br />
+          (critique ×10, majeure ×3, mineure ×1, warning ×0,2)
+        </p>
+        <p className="text-slate-600 text-[10px] font-mono mt-1">
+          densité : {density.toFixed(3)} / ligne
+        </p>
       </div>
 
       {/* Stacked bar */}

@@ -32,7 +32,7 @@ export function ErrorChart({ data, chartMode, onChartModeChange }: ErrorChartPro
 
   const yDomain = useMemo((): [number, number] | undefined => {
     if (autoScale || data.length === 0) return undefined;
-    const maxVal = Math.max(...data.map(d => d.total), 1);
+    const maxVal = Math.max(...data.map(d => Math.max(d.critical, d.major, d.minor, d.warning)), 1);
     const steps = [5, 10, 20, 50, 100, 200, 500, 1000];
     const ceiling = steps.find(s => s >= maxVal) || Math.ceil(maxVal / 100) * 100;
     return [0, ceiling];
@@ -87,20 +87,20 @@ export function ErrorChart({ data, chartMode, onChartModeChange }: ErrorChartPro
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
               <defs>
-                <linearGradient id="gc" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
-                <linearGradient id="gm" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f97316" stopOpacity={0.3} /><stop offset="95%" stopColor="#f97316" stopOpacity={0} /></linearGradient>
-                <linearGradient id="gn" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#eab308" stopOpacity={0.3} /><stop offset="95%" stopColor="#eab308" stopOpacity={0} /></linearGradient>
-                <linearGradient id="gw" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} /><stop offset="95%" stopColor="#06b6d4" stopOpacity={0} /></linearGradient>
+                <linearGradient id="gc" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} /></linearGradient>
+                <linearGradient id="gm" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f97316" stopOpacity={0.2} /><stop offset="95%" stopColor="#f97316" stopOpacity={0} /></linearGradient>
+                <linearGradient id="gn" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#eab308" stopOpacity={0.2} /><stop offset="95%" stopColor="#eab308" stopOpacity={0} /></linearGradient>
+                <linearGradient id="gw" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#06b6d4" stopOpacity={0.2} /><stop offset="95%" stopColor="#06b6d4" stopOpacity={0} /></linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
               <XAxis dataKey="timestamp" stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
               <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} domain={yDomain} />
               <Tooltip content={<CustomTooltip />} />
               <Legend verticalAlign="top" height={36} formatter={(v: string) => <span className="text-slate-300 text-xs capitalize">{v}</span>} />
-              <Area type="monotone" dataKey="critical" name="Critique" stroke="#ef4444" strokeWidth={2} fill="url(#gc)" stackId="e" />
-              <Area type="monotone" dataKey="major" name="Majeure" stroke="#f97316" strokeWidth={2} fill="url(#gm)" stackId="e" />
-              <Area type="monotone" dataKey="minor" name="Mineure" stroke="#eab308" strokeWidth={2} fill="url(#gn)" stackId="e" />
-              <Area type="monotone" dataKey="warning" name="Warning" stroke="#06b6d4" strokeWidth={2} fill="url(#gw)" stackId="e" />
+              <Area type="monotone" dataKey="critical" name="Critique" stroke="#ef4444" strokeWidth={2} fill="url(#gc)" />
+              <Area type="monotone" dataKey="major" name="Majeure" stroke="#f97316" strokeWidth={2} fill="url(#gm)" />
+              <Area type="monotone" dataKey="minor" name="Mineure" stroke="#eab308" strokeWidth={2} fill="url(#gn)" />
+              <Area type="monotone" dataKey="warning" name="Warning" stroke="#06b6d4" strokeWidth={2} fill="url(#gw)" />
             </AreaChart>
           </ResponsiveContainer>
         )}
