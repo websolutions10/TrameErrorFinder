@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 interface ErrorLogProps {
   errors: TrameError[];
+  compact?: boolean; // masque Code et Source quand la place est limitée
 }
 
 const SEVERITY_CONFIG: Record<ErrorSeverity, {
@@ -43,7 +44,7 @@ const SEVERITY_CONFIG: Record<ErrorSeverity, {
   },
 };
 
-function ErrorRow({ error }: { error: TrameError }) {
+function ErrorRow({ error, compact = false }: { error: TrameError; compact?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const config = SEVERITY_CONFIG[error.severity];
   const Icon = config.icon;
@@ -80,9 +81,11 @@ function ErrorRow({ error }: { error: TrameError }) {
         </span>
 
         {/* Error code */}
-        <span className="text-white font-mono text-sm font-semibold flex-shrink-0 w-28">
-          {error.errorCode}
-        </span>
+        {!compact && (
+          <span className="text-white font-mono text-sm font-semibold flex-shrink-0 w-28">
+            {error.errorCode}
+          </span>
+        )}
 
         {/* Description */}
         <span className="text-slate-300 text-sm flex-1 truncate">
@@ -90,9 +93,16 @@ function ErrorRow({ error }: { error: TrameError }) {
         </span>
 
         {/* Source */}
-        <span className="text-slate-500 text-xs font-mono flex-shrink-0">
-          {error.source}
-        </span>
+        {!compact && (
+          <span className="text-slate-500 text-xs font-mono flex-shrink-0">
+            {error.source}
+          </span>
+        )}
+        {compact && (
+          <span className="text-slate-500 text-xs font-mono flex-shrink-0">
+            {error.trameId}
+          </span>
+        )}
 
         {/* Expand icon */}
         <div className="flex-shrink-0 text-slate-500">
@@ -133,7 +143,7 @@ function ErrorRow({ error }: { error: TrameError }) {
   );
 }
 
-export function ErrorLog({ errors }: ErrorLogProps) {
+export function ErrorLog({ errors, compact = false }: ErrorLogProps) {
   const [filter, setFilter] = useState<ErrorSeverity | 'all'>('all');
 
   const filteredErrors =
@@ -152,7 +162,7 @@ export function ErrorLog({ errors }: ErrorLogProps) {
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-white font-semibold text-lg">Journal des erreurs</h2>
           <p className="text-slate-400 text-sm mt-0.5">
@@ -183,9 +193,9 @@ export function ErrorLog({ errors }: ErrorLogProps) {
         <div className="w-6 flex-shrink-0" />
         <div className="w-20 flex-shrink-0">Heure</div>
         <div className="w-20 flex-shrink-0">Niveau</div>
-        <div className="w-28 flex-shrink-0">Code</div>
+        {!compact && <div className="w-28 flex-shrink-0">Code</div>}
         <div className="flex-1">Description</div>
-        <div className="w-24 flex-shrink-0 text-right">Source</div>
+        <div className={`${compact ? 'w-14' : 'w-24'} flex-shrink-0 text-right`}>{compact ? 'Ligne' : 'Source'}</div>
         <div className="w-4 flex-shrink-0" />
       </div>
 
@@ -197,7 +207,7 @@ export function ErrorLog({ errors }: ErrorLogProps) {
           </div>
         ) : (
           filteredErrors.map((error) => (
-            <ErrorRow key={error.id} error={error} />
+            <ErrorRow key={error.id} error={error} compact={compact} />
           ))
         )}
       </div>
