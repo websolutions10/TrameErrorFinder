@@ -12,6 +12,7 @@ interface Props {
   errorCount: number;
   fallbackMode: boolean;
   hasNativeAPI: boolean;
+  keywords: string[];
   onSelectFile: () => void;
   onStopWatching: () => void;
   onTogglePause: () => void;
@@ -20,7 +21,7 @@ interface Props {
 
 export function RealFileSelector({
   isWatching, isPaused, fileName, lastModified, lineCount, errorCount,
-  fallbackMode, hasNativeAPI,
+  fallbackMode, hasNativeAPI, keywords,
   onSelectFile, onStopWatching, onTogglePause, onForceRefresh,
 }: Props) {
   return (
@@ -35,7 +36,11 @@ export function RealFileSelector({
               {isWatching ? '📡 Surveillance fichier active' : '📁 Sélectionner un fichier'}
             </h2>
             <p className="text-slate-400 text-sm">
-              {isWatching ? 'Détection en temps réel du mot-clé "errordialogue"' : 'Choisissez le fichier à surveiller'}
+              {isWatching
+                ? (keywords.length > 0
+                    ? `Détection en temps réel : ${keywords.map(k => `"${k}"`).join(', ')}`
+                    : 'Aucun mot-clé surveillé — ajoutez-en un ci-dessus')
+                : 'Choisissez le fichier à surveiller'}
             </p>
           </div>
         </div>
