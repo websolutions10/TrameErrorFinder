@@ -1,5 +1,10 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Trash2, Download, FileText } from 'lucide-react';
 import { useRealFileWatcher } from './hooks/useRealFileWatcher';
+import { useCadence } from './hooks/useCadence';
+import { AlertBanner } from './components/AlertBanner';
+import { PatternsPanel } from './components/PatternsPanel';
+import { groupPatterns } from './utils/cadence';
 import { StatusBar } from './components/StatusBar';
 import { ErrorChart } from './components/ErrorChart';
 import { StatsPanel } from './components/StatsPanel';
@@ -19,10 +24,11 @@ export default function App() {
   lineCount,
   fileContent,
   errors,
-  chartData,
   stats,
-  chartMode,
-  setChartMode,
+  events,
+  pauses,
+  sessionStart,
+  baselineCount,
   selectFile,
   stopWatching,
   togglePause,
@@ -36,6 +42,23 @@ export default function App() {
 
   const isActive = isWatching && !isPaused && !fallbackMode;
 
+  const { settings, setSettings, bucketMs, buckets, alert } = useCadence({
+    events, pauses, sessionStart, baselineCount, isWatching,
+  });
+
+  // Sélection d'une fenêtre sur le graphique / d'un motif → filtre le journal
+  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
+  const [patternFilter, setPatternFilter] = useState<string | null>(null);
+  const [dismissedCatchUp, setDismissedCatchUp] = useState<number | null>(null);
+  useEffect(() => { setSelectedBucket(null); setPatternFilter(null); setDismissedCatchUp(null); }, [sessionStart]);
+
+  const timeRange = useMemo(
+    () => (selectedBucket != null ? { start: selectedBucket, end: selectedBucket + bucketMs } : null),
+    [selectedBucket, bucketMs],
+  );
+  const patterns = useMemo(() => groupPatterns(errors, Date.now() - 5 * 60_000), [errors]);
+  const windowLabel = settings.windowSec < 60 ? `${settings.windowSec} s` : `${settings.windowSec / 60} min`;
+
   const config: ModuleSpyConfig = {
     endpoint: fileName || '(non sélectionné)',
     pollingInterval: 1000,
@@ -47,9 +70,9 @@ export default function App() {
   const handleExport = () => {
     if (errors.length === 0) return;
     const lines = [
-      'Timestamp;Code;Severity;Description;Ligne;Source',
+      'Détectée à;Origine;Code;Severity;Description;Ligne;Source',
       ...errors.map(e =>
-        `${e.timestamp.toLocaleString('fr-FR')};${e.errorCode};${e.severity};${e.description};${e.fieldPosition};${e.source}`
+        `${new Date(e.detectedAt).toLocaleString('fr-FR')};${e.baseline ? 'ouverture' : 'nouvelle'};${e.errorCode};${e.severity};${e.description};${e.fieldPosition};${e.source}`
       ),
     ];
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -177,11 +200,29 @@ export default function App() {
           onForceRefresh={forceRefresh}
         />
 
+        {/* Alertes : seuil dépassé, rythme en hausse, rattrapage */}
+        <AlertBanner
+          alert={alert}
+          windowSec={settings.windowSec}
+          threshold={settings.threshold}
+          dismissedCatchUp={dismissedCatchUp}
+          onDismissCatchUp={setDismissedCatchUp}
+        />
+
         {/* Graphique + Compteurs */}
-        {(errors.length > 0 || chartData.length > 0) && (
+        {(errors.length > 0 || buckets.length > 0) && (
           <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
             <div className="xl:col-span-3 space-y-5">
-              <ErrorChart data={chartData} chartMode={chartMode} onChartModeChange={setChartMode} />
+              <ErrorChart
+                buckets={buckets}
+                bucketMs={bucketMs}
+                settings={settings}
+                onSettingsChange={setSettings}
+                alertLevel={alert.level}
+                selected={selectedBucket}
+                onSelect={setSelectedBucket}
+                baselineCount={baselineCount}
+              />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <QuickStat label="Erreurs détectées" value={stats.totalErrors.toString()}
                   color={stats.totalErrors > 20 ? 'text-red-400' : stats.totalErrors > 5 ? 'text-orange-400' : stats.totalErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}
@@ -190,8 +231,8 @@ export default function App() {
                 <QuickStat label="Taux d'erreur"
                   value={stats.tramesAnalyzed > 0 ? `${((stats.tramesInError / stats.tramesAnalyzed) * 100).toFixed(1)}%` : '—'}
                   color="text-amber-400" />
-                <QuickStat label="Nouvelles erreurs" value={stats.errorRate.toString()}
-                  color={stats.errorRate > 0 ? 'text-red-400' : 'text-slate-400'} pulse={stats.errorRate > 0} />
+                <QuickStat label={`Nouvelles (${windowLabel})`} value={Math.round(alert.all).toString()}
+                  color={alert.all > 0 ? 'text-red-400' : 'text-slate-400'} pulse={alert.all > 0} />
               </div>
 
               {/* Sous le graphique : analyse + journal */}
@@ -201,13 +242,21 @@ export default function App() {
                 </div>
                 {errors.length > 0 && (
                   <div className="lg:col-span-2 min-w-0">
-                    <ErrorLog errors={errors} compact />
+                    <ErrorLog
+                      errors={errors}
+                      compact
+                      timeRange={timeRange}
+                      onClearTime={() => setSelectedBucket(null)}
+                      pattern={patternFilter}
+                      onClearPattern={() => setPatternFilter(null)}
+                    />
                   </div>
                 )}
               </div>
             </div>
             <div className="xl:col-span-1 space-y-5">
-              <StatsPanel stats={stats} />
+              <StatsPanel stats={stats} windowCount={alert.critMajor} threshold={settings.threshold} windowLabel={windowLabel} />
+              <PatternsPanel groups={patterns} total={stats.totalErrors} active={patternFilter} onSelect={setPatternFilter} />
             </div>
           </div>
         )}

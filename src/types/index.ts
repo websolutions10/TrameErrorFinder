@@ -1,6 +1,9 @@
 export type ErrorSeverity = 'critical' | 'major' | 'minor' | 'warning';
 
-export type ChartMode = 'surveillance' | 'fichier';
+export type ChartMode = 'surveillance' | 'fichier'; // (hérité, plus utilisé par le graphique)
+
+/** Vue du graphique : cadence + cumul, ou une mini-courbe par niveau */
+export type ChartView = 'cadence' | 'niveaux';
 
 export interface MonitoringRule {
   keyword: string;
@@ -18,6 +21,30 @@ export interface TrameError {
   expectedValue?: string;
   receivedValue?: string;
   source: string;
+  /** Instant (ms) où l'outil a vu cette ligne pour la première fois — PAS l'heure du log */
+  detectedAt: number;
+  /** true = déjà présente à l'ouverture du fichier (historique), pas une nouveauté */
+  baseline: boolean;
+  /** Message normalisé (chiffres remplacés par #) pour regrouper les récurrences */
+  pattern: string;
+}
+
+/** Nouvelles erreurs vues lors d'une relecture (hors historique d'ouverture) */
+export interface DetectionEvent {
+  t: number;
+  /** Durée (ms) depuis la relecture précédente */
+  dt: number;
+  critical: number;
+  major: number;
+  minor: number;
+  warning: number;
+  /** Gros paquet vu d'un coup après une pause / une longue absence : étalement réel inconnu */
+  catchUp: boolean;
+}
+
+export interface PauseSpan {
+  start: number;
+  end: number | null;
 }
 
 export interface TrameErrorCount {

@@ -1,6 +1,6 @@
 import {
   FolderOpen, FileText, Play, Pause, RefreshCw, StopCircle,
-  AlertTriangle, CheckCircle, Eye, Clock, Zap, Info,
+  AlertTriangle, CheckCircle, Eye, Clock, Info,
 } from 'lucide-react';
 
 interface Props {
@@ -93,7 +93,6 @@ export function RealFileSelector({
                 <span className={`font-medium ${isPaused ? 'text-amber-400' : 'text-emerald-400'}`}>
                   {isPaused ? '⏸ Surveillance en pause' : '▶ Surveillance active — relecture automatique chaque seconde'}
                 </span>
-                <Zap className={`w-4 h-4 ${isPaused ? 'text-amber-400' : 'text-emerald-400'}`} />
               </div>
             ) : (
               <div className="flex items-center justify-center gap-3 py-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">

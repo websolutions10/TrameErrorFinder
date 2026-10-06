@@ -1,6 +1,7 @@
-import { AlertTriangle, AlertCircle, Info, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Info, XCircle, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { TrameError, ErrorSeverity } from '../types';
-import { useState } from 'react';
+import { useState, useMemo, memo } from 'react';
+import { fmtTime } from '../utils/cadence';
 
 interface ErrorLogProps {
   errors: TrameError[];
@@ -64,13 +65,16 @@ function ErrorRow({ error, compact = false }: { error: TrameError; compact?: boo
           <Icon className={`w-4 h-4 ${config.color}`} />
         </div>
 
-        {/* Timestamp */}
-        <span className="text-slate-400 text-xs font-mono w-20 flex-shrink-0">
-          {error.timestamp.toLocaleTimeString('fr-FR', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })}
+        {/* Heure de détection (pas l'heure du log) */}
+        <span
+          className="text-slate-400 text-xs font-mono w-20 flex-shrink-0"
+          title={error.baseline ? "Déjà présente à l'ouverture du fichier" : "Heure à laquelle l'outil a vu cette erreur"}
+        >
+          {error.baseline ? (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 font-sans">ouverture</span>
+          ) : (
+            fmtTime(error.detectedAt)
+          )}
         </span>
 
         {/* Severity badge */}
@@ -143,13 +147,38 @@ function ErrorRow({ error, compact = false }: { error: TrameError; compact?: boo
   );
 }
 
-export function ErrorLog({ errors, compact = false }: ErrorLogProps) {
-  const [filter, setFilter] = useState<ErrorSeverity | 'all'>('all');
+const MAX_ROWS = 500;
 
-  const filteredErrors =
-    filter === 'all'
-      ? errors
-      : errors.filter((e) => e.severity === filter);
+interface ErrorLogProps2 extends ErrorLogProps {
+  /** Filtre issu d'un clic sur le graphique : erreurs vues pendant cette fenêtre */
+  timeRange?: { start: number; end: number } | null;
+  onClearTime?: () => void;
+  /** Filtre issu d'un clic sur un motif récurrent */
+  pattern?: string | null;
+  onClearPattern?: () => void;
+}
+
+export const ErrorLog = memo(function ErrorLog({
+  errors, compact = false, timeRange = null, onClearTime, pattern = null, onClearPattern,
+}: ErrorLogProps2) {
+  const [filter, setFilter] = useState<ErrorSeverity | 'all'>('all');
+  const [onlyNew, setOnlyNew] = useState(false);
+
+  const filteredErrors = useMemo(() => {
+    let list = errors;
+    if (filter !== 'all') list = list.filter(e => e.severity === filter);
+    if (onlyNew || timeRange) list = list.filter(e => !e.baseline);
+    if (timeRange) list = list.filter(e => e.detectedAt >= timeRange.start && e.detectedAt < timeRange.end);
+    if (pattern) list = list.filter(e => e.pattern === pattern);
+    // Récentes d'abord ; l'historique d'ouverture à la fin
+    return [...list].sort((a, b) =>
+      Number(a.baseline) - Number(b.baseline) ||
+      b.detectedAt - a.detectedAt ||
+      (b.fieldPosition ?? 0) - (a.fieldPosition ?? 0));
+  }, [errors, filter, onlyNew, timeRange, pattern]);
+
+  const shown = filteredErrors.slice(0, MAX_ROWS);
+  const hasBaseline = errors.some(e => e.baseline);
 
   const filterButtons: { value: ErrorSeverity | 'all'; label: string; color: string }[] = [
     { value: 'all', label: 'Tous', color: 'text-white' },
@@ -167,6 +196,7 @@ export function ErrorLog({ errors, compact = false }: ErrorLogProps) {
           <h2 className="text-white font-semibold text-lg">Journal des erreurs</h2>
           <p className="text-slate-400 text-sm mt-0.5">
             {filteredErrors.length} erreur{filteredErrors.length > 1 ? 's' : ''} affichée{filteredErrors.length > 1 ? 's' : ''}
+            {filteredErrors.length > MAX_ROWS && <span className="text-slate-500"> (les {MAX_ROWS} plus récentes)</span>}
           </p>
         </div>
 
@@ -188,10 +218,41 @@ export function ErrorLog({ errors, compact = false }: ErrorLogProps) {
         </div>
       </div>
 
+      {/* Filtres actifs (graphique / motif) + historique d'ouverture */}
+      {(timeRange || pattern || hasBaseline) && (
+        <div className="px-5 py-2 border-b border-slate-700/60 flex items-center gap-2 flex-wrap text-xs">
+          {timeRange && (
+            <button
+              onClick={onClearTime}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25"
+            >
+              Fenêtre {fmtTime(timeRange.start)} – {fmtTime(timeRange.end)} <X className="w-3 h-3" />
+            </button>
+          )}
+          {pattern && (
+            <button
+              onClick={onClearPattern}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25 max-w-full"
+            >
+              <span className="truncate font-mono">Motif : {pattern}</span> <X className="w-3 h-3 flex-shrink-0" />
+            </button>
+          )}
+          {hasBaseline && !timeRange && (
+            <button
+              onClick={() => setOnlyNew(v => !v)}
+              className={`px-2.5 py-1 rounded-full border ${onlyNew ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-600 hover:text-white'}`}
+              title="Masque les erreurs déjà présentes quand le fichier a été ouvert"
+            >
+              {onlyNew ? 'Nouvelles seulement ✓' : 'Nouvelles seulement'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Table header */}
       <div className="flex items-center gap-3 px-4 py-2 bg-slate-900/50 border-b border-slate-700 text-xs text-slate-500 font-medium uppercase tracking-wider">
         <div className="w-6 flex-shrink-0" />
-        <div className="w-20 flex-shrink-0">Heure</div>
+        <div className="w-20 flex-shrink-0" title="Heure à laquelle l'outil a détecté l'erreur (pas l'heure écrite dans le log)">Détectée</div>
         <div className="w-20 flex-shrink-0">Niveau</div>
         {!compact && <div className="w-28 flex-shrink-0">Code</div>}
         <div className="flex-1">Description</div>
@@ -201,16 +262,16 @@ export function ErrorLog({ errors, compact = false }: ErrorLogProps) {
 
       {/* Error list */}
       <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-track-slate-900 scrollbar-thumb-slate-600">
-        {filteredErrors.length === 0 ? (
+        {shown.length === 0 ? (
           <div className="px-4 py-12 text-center text-slate-500">
             Aucune erreur à afficher
           </div>
         ) : (
-          filteredErrors.map((error) => (
+          shown.map((error) => (
             <ErrorRow key={error.id} error={error} compact={compact} />
           ))
         )}
       </div>
     </div>
   );
-}
+});

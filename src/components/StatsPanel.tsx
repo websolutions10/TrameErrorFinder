@@ -13,13 +13,19 @@ import { CounterCard } from './CounterCard';
 
 interface StatsPanelProps {
   stats: ErrorStats;
+  /** Nouvelles erreurs (critiques+majeures) sur la fenêtre glissante, et seuil d'alerte associé */
+  windowCount?: number;
+  threshold?: number;
+  windowLabel?: string;
 }
 
-export function StatsPanel({ stats }: StatsPanelProps) {
-  const errorPercentage =
-    stats.tramesAnalyzed > 0
-      ? ((stats.tramesInError / stats.tramesAnalyzed) * 100).toFixed(2)
-      : '0.00';
+export function StatsPanel({ stats, windowCount = 0, threshold = 0, windowLabel = '' }: StatsPanelProps) {
+  const errorPct = stats.tramesAnalyzed > 0 ? (stats.tramesInError / stats.tramesAnalyzed) * 100 : 0;
+  const errorPercentage = errorPct.toFixed(2);
+  // Largeur = vraie proportion de lignes en erreur (33 % → un tiers de la barre), mini 2 % pour rester visible
+  const pctWidth = errorPct > 0 ? Math.max(2, Math.min(100, errorPct)) : 0;
+  // Nouvelles erreurs : barre pleine = seuil d'alerte atteint
+  const newRatio = threshold > 0 ? Math.min(1, windowCount / threshold) : 0;
 
   return (
     <div className="space-y-4">
@@ -88,24 +94,21 @@ export function StatsPanel({ stats }: StatsPanelProps) {
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-400" />
-                <span className="text-slate-300 text-sm">Nouvelles erreurs</span>
+                <span className="text-slate-300 text-sm">Nouvelles erreurs{windowLabel ? ` (${windowLabel})` : ''}</span>
               </div>
-              <span className="text-white font-mono font-bold">{stats.errorRate}</span>
+              <span className="text-white font-mono font-bold">
+                {Math.round(windowCount)}{threshold > 0 && <span className="text-slate-500 text-xs font-normal"> / {threshold}</span>}
+              </span>
             </div>
             <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
-                  stats.errorRate > 20
-                    ? 'bg-red-500'
-                    : stats.errorRate > 10
-                    ? 'bg-orange-500'
-                    : stats.errorRate > 5
-                    ? 'bg-yellow-500'
-                    : 'bg-emerald-500'
+                  newRatio >= 1 ? 'bg-red-500' : newRatio >= 0.6 ? 'bg-orange-500' : newRatio > 0 ? 'bg-yellow-500' : 'bg-emerald-500'
                 }`}
-                style={{ width: `${Math.min(100, (stats.errorRate / 30) * 100)}%` }}
+                style={{ width: `${newRatio * 100}%` }}
               />
             </div>
+            <p className="text-slate-600 text-[10px] mt-1">Barre pleine = seuil d'alerte (critiques + majeures)</p>
           </div>
 
           {/* Taux d'erreur sur trames */}
@@ -126,9 +129,10 @@ export function StatsPanel({ stats }: StatsPanelProps) {
                     ? 'bg-orange-500'
                     : 'bg-emerald-500'
                 }`}
-                style={{ width: `${Math.min(100, parseFloat(errorPercentage) * 5)}%` }}
+                style={{ width: `${pctWidth}%` }}
               />
             </div>
+            <p className="text-slate-600 text-[10px] mt-1">Part des lignes du fichier en erreur (barre pleine = 100 %)</p>
           </div>
 
           {/* Stats numériques */}
