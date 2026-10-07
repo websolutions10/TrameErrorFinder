@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2, Download, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { useRealFileWatcher } from './hooks/useRealFileWatcher';
 import { useCadence } from './hooks/useCadence';
 import { AlertBanner } from './components/AlertBanner';
 import { PatternsPanel } from './components/PatternsPanel';
 import { groupPatterns } from './utils/cadence';
+import type { TimeRange } from './components/ErrorChart';
 import { StatusBar } from './components/StatusBar';
 import { ErrorChart } from './components/ErrorChart';
 import { StatsPanel } from './components/StatsPanel';
@@ -26,6 +27,7 @@ export default function App() {
   errors,
   stats,
   events,
+  samples,
   pauses,
   sessionStart,
   baselineCount,
@@ -43,20 +45,16 @@ export default function App() {
 
   const isActive = isWatching && !isPaused && !fallbackMode;
 
-  const { settings, setSettings, bucketMs, buckets, alert } = useCadence({
+  const { settings, setSettings, now, bucketMs, buckets, alert } = useCadence({
     events, pauses, sessionStart, baselineCount, baselineLevels, isWatching,
   });
 
   // Sélection d'une fenêtre sur le graphique / d'un motif → filtre le journal
-  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
+  const [selectedRange, setSelectedRange] = useState<TimeRange | null>(null);
   const [patternFilter, setPatternFilter] = useState<string | null>(null);
   const [dismissedCatchUp, setDismissedCatchUp] = useState<number | null>(null);
-  useEffect(() => { setSelectedBucket(null); setPatternFilter(null); setDismissedCatchUp(null); }, [sessionStart]);
+  useEffect(() => { setSelectedRange(null); setPatternFilter(null); setDismissedCatchUp(null); }, [sessionStart]);
 
-  const timeRange = useMemo(
-    () => (selectedBucket != null ? { start: selectedBucket, end: selectedBucket + bucketMs } : null),
-    [selectedBucket, bucketMs],
-  );
   const patterns = useMemo(() => groupPatterns(errors, Date.now() - 5 * 60_000), [errors]);
   const windowLabel = settings.windowSec < 60 ? `${settings.windowSec} s` : `${settings.windowSec / 60} min`;
 
@@ -90,116 +88,77 @@ export default function App() {
       <StatusBar config={config} isRunning={isActive} />
 
       <div className="flex-1 p-5 space-y-5">
-        {/* Barre de contrôle */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        {/* Mots-clés + fenêtre de surveillance (exports et RAZ inclus) */}
+        <div className="grid grid-cols-1 xl:grid-cols-[auto_1fr] gap-5 items-stretch">
+          <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3 xl:w-[420px]">
+            <p className="text-cyan-400 text-sm mb-2 font-semibold">Mots-clés surveillés</p>
 
-  <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3 min-w-[420px]">
+            {rules.map((rule, index) => (
+              <div key={index} className="flex gap-2 mb-2">
+                <input
+                  value={rule.keyword}
+                  onChange={(e) => {
+                    const updated = [...rules];
+                    updated[index].keyword = e.target.value;
+                    setRules(updated);
+                  }}
+                  placeholder="Mot-clé"
+                  className="bg-slate-800 border border-slate-600 px-2 py-1 rounded text-white flex-1 min-w-0"
+                />
+                <select
+                  value={rule.severity}
+                  onChange={(e) => {
+                    const updated = [...rules];
+                    updated[index].severity = e.target.value as any;
+                    setRules(updated);
+                  }}
+                  className="bg-slate-800 border border-slate-600 px-2 py-1 rounded text-white"
+                >
+                  <option value="critical">Critique</option>
+                  <option value="major">Majeure</option>
+                  <option value="minor">Mineure</option>
+                  <option value="warning">Avertissement</option>
+                </select>
+                <button
+                  onClick={() => {
+                    const updated = [...rules];
+                    updated.splice(index, 1);
+                    setRules(updated);
+                  }}
+                  className="px-2 bg-red-600 rounded"
+                >
+                  X
+                </button>
+              </div>
+            ))}
 
-    <p className="text-cyan-400 text-sm mb-2 font-semibold">
-      Mots-clés surveillés
-    </p>
+            <button
+              onClick={() => setRules([...rules, { keyword: '', severity: 'minor' }])}
+              className="px-3 py-1 bg-cyan-600 rounded text-sm"
+            >
+              + Ajouter
+            </button>
+          </div>
 
-    {rules.map((rule, index) => (
-
-      <div key={index} className="flex gap-2 mb-2">
-
-        <input
-          value={rule.keyword}
-          onChange={(e) => {
-            const updated = [...rules];
-            updated[index].keyword = e.target.value;
-            setRules(updated);
-          }}
-          placeholder="Mot-clé"
-          className="bg-slate-800 border border-slate-600 px-2 py-1 rounded text-white flex-1"
-        />
-
-        <select
-          value={rule.severity}
-          onChange={(e) => {
-            const updated = [...rules];
-            updated[index].severity = e.target.value as any;
-            setRules(updated);
-          }}
-          className="bg-slate-800 border border-slate-600 px-2 py-1 rounded text-white"
-        >
-          <option value="critical">Critique</option>
-          <option value="major">Majeure</option>
-          <option value="minor">Mineure</option>
-          <option value="warning">Avertissement</option>
-        </select>
-
-        <button
-          onClick={() => {
-            const updated = [...rules];
-            updated.splice(index, 1);
-            setRules(updated);
-          }}
-          className="px-2 bg-red-600 rounded"
-        >
-          X
-        </button>
-
-      </div>
-    ))}
-
-    <button
-      onClick={() =>
-        setRules([
-          ...rules,
-          {
-            keyword: '',
-            severity: 'minor'
-          }
-        ])
-      }
-      className="px-3 py-1 bg-cyan-600 rounded text-sm"
-    >
-      + Ajouter
-    </button>
-
-  </div>
-
-  <div className="flex items-center gap-3">
-
-    <button
-      onClick={handleExport}
-      disabled={errors.length === 0}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-    >
-      <Download className="w-4 h-4" />
-      Exporter CSV
-    </button>
-
-    <button
-      onClick={clearAll}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all"
-    >
-      <Trash2 className="w-4 h-4" />
-      RAZ
-    </button>
-
-  </div>
-
-</div>
-
-
-        {/* Sélection fichier */}
-        <RealFileSelector
-          isWatching={isWatching}
-          isPaused={isPaused}
-          fileName={fileName}
-          lastModified={lastModified}
-          lineCount={lineCount}
-          errorCount={errors.length}
-          fallbackMode={fallbackMode}
-          hasNativeAPI={hasNativeAPI}
-          keywords={rules.map(r => r.keyword.trim()).filter(Boolean)}
-          onSelectFile={selectFile}
-          onStopWatching={stopWatching}
-          onTogglePause={togglePause}
-          onForceRefresh={forceRefresh}
-        />
+          <RealFileSelector
+            isWatching={isWatching}
+            isPaused={isPaused}
+            fileName={fileName}
+            lastModified={lastModified}
+            lineCount={lineCount}
+            errorCount={errors.length}
+            fallbackMode={fallbackMode}
+            hasNativeAPI={hasNativeAPI}
+            keywords={rules.map(r => r.keyword.trim()).filter(Boolean)}
+            canExport={errors.length > 0}
+            onSelectFile={selectFile}
+            onStopWatching={stopWatching}
+            onTogglePause={togglePause}
+            onForceRefresh={forceRefresh}
+            onExport={handleExport}
+            onClear={clearAll}
+          />
+        </div>
 
         {/* Alertes : seuil dépassé, rythme en hausse, rattrapage */}
         <AlertBanner
@@ -217,11 +176,14 @@ export default function App() {
               <ErrorChart
                 buckets={buckets}
                 bucketMs={bucketMs}
+                samples={samples}
+                pauses={pauses}
+                now={now}
                 settings={settings}
                 onSettingsChange={setSettings}
                 alertLevel={alert.level}
-                selected={selectedBucket}
-                onSelect={setSelectedBucket}
+                selected={selectedRange}
+                onSelect={setSelectedRange}
                 baselineCount={baselineCount}
               />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -246,8 +208,8 @@ export default function App() {
                     <ErrorLog
                       errors={errors}
                       compact
-                      timeRange={timeRange}
-                      onClearTime={() => setSelectedBucket(null)}
+                      timeRange={selectedRange}
+                      onClearTime={() => setSelectedRange(null)}
                       pattern={patternFilter}
                       onClearPattern={() => setPatternFilter(null)}
                     />

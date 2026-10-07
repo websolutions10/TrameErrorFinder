@@ -6,6 +6,7 @@ import { CATCHUP_MS, normalizePattern } from '../utils/cadence';
 
 const POLL_INTERVAL = 1000;
 const MAX_EVENTS = 5000;
+const MAX_SAMPLES = 300; // relectures conservées pour la courbe instantanée
 
 function classifySeverity(line: string): ErrorSeverity {
   const lower = line.toLowerCase();
@@ -53,6 +54,7 @@ export function useRealFileWatcher() {
 
   // Historique de surveillance (axe = moment où l'outil a VU l'erreur)
   const [events, setEvents] = useState<DetectionEvent[]>([]);
+  const [samples, setSamples] = useState<DetectionEvent[]>([]); // une entrée par relecture (instantané)
   const [pauses, setPauses] = useState<PauseSpan[]>([]);
   const [sessionStart, setSessionStart] = useState<number | null>(null);
   const [baselineCount, setBaselineCount] = useState(0);
@@ -79,6 +81,7 @@ export function useRealFileWatcher() {
   const resumedRef = useRef(false);
   const pausedRef = useRef(false);
   const eventsRef = useRef<DetectionEvent[]>([]);
+  const samplesRef = useRef<DetectionEvent[]>([]);
 
   // Fallback mode: input[type=file] reload
   const [fallbackMode, setFallbackMode] = useState(false);
@@ -97,11 +100,18 @@ export function useRealFileWatcher() {
     lastReadAt.current = 0;
     resumedRef.current = false;
     eventsRef.current = [];
+    samplesRef.current = [];
     setEvents([]);
+    setSamples([]);
     setPauses([]);
     setSessionStart(null);
     setBaselineCount(0);
     setBaselineLevels({ critical: 0, major: 0, minor: 0, warning: 0 });
+  }, []);
+
+  const pushSample = useCallback((ev: DetectionEvent) => {
+    samplesRef.current = [...samplesRef.current, ev].slice(-MAX_SAMPLES);
+    setSamples(samplesRef.current);
   }, []);
 
   const parseContent = useCallback((content: string, force = false) => {
@@ -109,6 +119,10 @@ export function useRealFileWatcher() {
     const prevRead = lastReadAt.current;
     lastReadAt.current = nowMs; // à chaque lecture, même sans changement
     if (!force && content === prevContent.current) {
+      // Relecture sans changement : point à zéro sur la courbe instantanée
+      if (baselineDone.current) {
+        pushSample({ t: nowMs, dt: Math.max(1, nowMs - prevRead), critical: 0, major: 0, minor: 0, warning: 0, catchUp: false, afterPause: resumedRef.current });
+      }
       resumedRef.current = false; // reprise sans rien de nouveau : pas de rattrapage
       return;
     }
@@ -148,6 +162,7 @@ export function useRealFileWatcher() {
     const freshTotal = fresh.critical + fresh.major + fresh.minor + fresh.warning;
     if (isBaselineRead) {
       baselineDone.current = true;
+      pushSample({ t: nowMs, dt: 1, critical: 0, major: 0, minor: 0, warning: 0, catchUp: false }); // point de départ
       setSessionStart(nowMs);
       setBaselineCount(found.length);
       setBaselineLevels({
@@ -156,12 +171,15 @@ export function useRealFileWatcher() {
         minor: found.filter(e => e.severity === 'minor').length,
         warning: found.filter(e => e.severity === 'warning').length,
       });
-    } else if (freshTotal > 0) {
+    } else {
       const dt = Math.max(1, nowMs - prevRead);
-      const catchUp = resumedRef.current || dt > CATCHUP_MS;
-      const ev: DetectionEvent = { t: nowMs, dt, ...fresh, catchUp };
-      eventsRef.current = [...eventsRef.current, ev].slice(-MAX_EVENTS);
-      setEvents(eventsRef.current);
+      const catchUp = freshTotal > 0 && (resumedRef.current || dt > CATCHUP_MS);
+      const ev: DetectionEvent = { t: nowMs, dt, ...fresh, catchUp, afterPause: resumedRef.current };
+      pushSample(ev);
+      if (freshTotal > 0) {
+        eventsRef.current = [...eventsRef.current, ev].slice(-MAX_EVENTS);
+        setEvents(eventsRef.current);
+      }
     }
     if (!isBaselineRead) resumedRef.current = false;
 
@@ -182,7 +200,7 @@ export function useRealFileWatcher() {
     setLineCount(nonEmpty);
     setLastModified(now);
     prevContent.current = content;
-  }, []);
+  }, [pushSample]);
 
   const startPolling = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -321,7 +339,7 @@ export function useRealFileWatcher() {
     fallbackMode,
     isWatching, isPaused, fileName, lastModified, lineCount,
     fileContent, errors, stats,
-    events, pauses, sessionStart, baselineCount, baselineLevels,
+    events, samples, pauses, sessionStart, baselineCount, baselineLevels,
     selectFile, stopWatching, togglePause, forceRefresh, clearAll,
     rules,
     setRules,

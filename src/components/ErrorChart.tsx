@@ -1,10 +1,10 @@
-import { useMemo, useState, memo } from 'react';
+import { useMemo, useState, memo, type ReactNode } from 'react';
 import {
   ComposedChart, AreaChart, BarChart, Area, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ReferenceArea, ReferenceDot, Cell,
 } from 'recharts';
-import { Bell, Volume2, VolumeX, Scissors } from 'lucide-react';
-import type { ChartView, ErrorSeverity } from '../types';
+import { Bell, Volume2, VolumeX, Scissors, Eye } from 'lucide-react';
+import type { ChartView, ErrorSeverity, DetectionEvent, PauseSpan } from '../types';
 import {
   Bucket, AlertSettings, AlertLevel, WINDOW_OPTIONS, fmtTime, fmtDuration, pausedRanges,
 } from '../utils/cadence';
@@ -16,13 +16,13 @@ const LEVELS: { key: ErrorSeverity; name: string; color: string; cum: keyof Buck
   { key: 'warning', name: 'Warning', color: '#06b6d4', cum: 'cumulWarning', grad: 'gw' },
 ];
 
-const VIEWS: { id: ChartView; label: string; active: string; strip: string; title: string; desc: string }[] = [
+const VIEWS: { id: ChartView; label: string; icon?: ReactNode; active: string; strip: string; title: string; desc: string }[] = [
   {
-    id: 'surveillance', label: '📡 Surveillance',
+    id: 'surveillance', label: 'Surveillance', icon: <Eye className="w-3.5 h-3.5 text-emerald-300" />,
     active: 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30',
     strip: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400',
     title: 'Mode Surveillance',
-    desc: 'Nouvelles erreurs apparues dans chaque fenêtre de temps, une courbe par niveau. Ça monte quand ça s\'accélère, ça redescend quand ça se calme.',
+    desc: 'Valeur instantanée : nouvelles erreurs détectées à chaque relecture du fichier, une courbe par niveau de sévérité.',
   },
   {
     id: 'fichier', label: '📁 Depuis le fichier',
@@ -47,16 +47,23 @@ const VIEWS: { id: ChartView; label: string; active: string; strip: string; titl
   },
 ];
 
+export interface TimeRange { start: number; end: number }
+
 interface ErrorChartProps {
   buckets: Bucket[];
   bucketMs: number;
+  samples: DetectionEvent[];
+  pauses: PauseSpan[];
+  now: number;
   settings: AlertSettings;
   onSettingsChange: (s: AlertSettings) => void;
   alertLevel: AlertLevel;
-  selected: number | null;
-  onSelect: (start: number | null) => void;
+  selected: TimeRange | null;
+  onSelect: (r: TimeRange | null) => void;
   baselineCount: number;
 }
+
+const GAP_MS = 5000; // au-delà, la courbe instantanée est coupée (pause, absence de relecture)
 
 function BucketTooltip({ active, payload, mode }: any) {
   if (!active || !payload || !payload.length) return null;
@@ -91,12 +98,38 @@ function BucketTooltip({ active, payload, mode }: any) {
   );
 }
 
+function SampleTooltip({ active, payload }: any) {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload;
+  if (p.gap) return null;
+  const rows = LEVELS.filter(l => (p[l.key] ?? 0) > 0);
+  return (
+    <div className="bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 shadow-xl max-w-xs">
+      <p className="text-slate-300 text-xs mb-2 font-mono">{fmtTime(p.mid)}</p>
+      {rows.length === 0 && <p className="text-slate-400 text-sm">Aucune nouvelle erreur</p>}
+      {rows.map(l => (
+        <div key={l.key} className="flex items-center gap-2 text-sm">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: l.color }} />
+          <span className="text-slate-400">{l.name} :</span>
+          <span className="text-white font-mono font-bold">{p[l.key]}</span>
+        </div>
+      ))}
+      {p.catchUp && (
+        <p className="text-amber-400 text-xs mt-1.5 leading-snug">
+          ⚠ Rattrapage : {p.total} erreurs vues d'un coup après {fmtDuration(p.dt)} sans relecture. Étalement réel inconnu.
+        </p>
+      )}
+      <p className="text-slate-500 text-[10px] mt-1.5">Clic : filtrer le journal (±2 s)</p>
+    </div>
+  );
+}
+
 function windowLabel(sec: number) {
   return sec < 60 ? `${sec} s` : `${sec / 60} min`;
 }
 
 export const ErrorChart = memo(function ErrorChart({
-  buckets, bucketMs, settings, onSettingsChange, alertLevel, selected, onSelect, baselineCount,
+  buckets, bucketMs, samples, pauses, now, settings, onSettingsChange, alertLevel, selected, onSelect, baselineCount,
 }: ErrorChartProps) {
   const [view, setView] = useState<ChartView>('surveillance');
   const [clip, setClip] = useState(true);
@@ -108,11 +141,27 @@ export const ErrorChart = memo(function ErrorChart({
 
   // Axe X temporel : chaque point/barre est au milieu de sa fenêtre, les zones (pause, sélection) sont exactes
   const data = useMemo(() => buckets.map(b => ({ ...b, mid: b.start + bucketMs / 2 })), [buckets, bucketMs]);
-  // Courbes « Surveillance » : pendant une pause on n'a rien mesuré → le trait est coupé (pas un faux zéro)
-  const survData = useMemo(
-    () => data.map(b => (b.paused && !b.catchUp ? { ...b, critical: null, major: null, minor: null, warning: null } : b)),
-    [data],
-  );
+  // Mode Surveillance : une valeur par relecture (instantané). Un trou > GAP_MS coupe la courbe (pause, absence)
+  const survData = useMemo(() => {
+    const out: any[] = [];
+    samples.forEach((s, i) => {
+      const prev = samples[i - 1];
+      if (prev && s.t - prev.t > GAP_MS) {
+        out.push({ mid: prev.t + 1, gap: true, critical: null, major: null, minor: null, warning: null });
+      }
+      out.push({
+        mid: s.t, critical: s.critical, major: s.major, minor: s.minor, warning: s.warning,
+        total: s.critical + s.major + s.minor + s.warning, catchUp: s.catchUp, afterPause: !!s.afterPause, dt: s.dt,
+      });
+    });
+    return out;
+  }, [samples]);
+  const survDomain: [number, number] = samples.length
+    ? [samples[0].t, Math.max(now, samples[samples.length - 1].t)]
+    : [0, 1];
+  const survCatchUps = useMemo(() => samples.filter(s => s.catchUp), [samples]);
+  const survLevelMax = (s: DetectionEvent) => Math.max(s.critical, s.major, s.minor, s.warning);
+  const survCap = Math.ceil(Math.max(Math.max(0, ...samples.filter(s => !s.catchUp).map(survLevelMax)), 3) * 1.25);
   const xDomain: [number, number] = buckets.length ? [buckets[0].start, buckets[buckets.length - 1].end] : [0, 1];
   const ranges = useMemo(() => pausedRanges(buckets), [buckets]);
   const catchUps = useMemo(() => buckets.filter(b => b.catchUp), [buckets]);
@@ -126,18 +175,27 @@ export const ErrorChart = memo(function ErrorChart({
   const levelMax = (b: Bucket) => Math.max(b.critical, b.major, b.minor, b.warning);
   const capCadence = Math.ceil(Math.max(Math.max(maxRegular(b => b.total), 3) * 1.25, settings.threshold * 1.15));
   const capCurves = Math.ceil(Math.max(maxRegular(levelMax), 3) * 1.25);
-  const cap = view === 'cadence' ? capCadence : capCurves;
-  const clippedBuckets = clip && view !== 'fichier'
+  const cap = view === 'surveillance' ? survCap : view === 'cadence' ? capCadence : capCurves;
+  const clippedBuckets = clip && view !== 'fichier' && view !== 'surveillance'
     ? catchUps.filter(b => (view === 'cadence' ? b.total : levelMax(b)) > cap)
     : [];
+  const clippedSamples = clip && view === 'surveillance' ? survCatchUps.filter(s => survLevelMax(s) > survCap) : [];
   const canClip = view !== 'fichier';
 
   const handleClick = (state: any) => {
     const raw = state?.activeIndex ?? state?.activeTooltipIndex;
     const i = raw == null ? NaN : Number(raw);
-    const b = Number.isFinite(i) ? buckets[i] : undefined;
-    if (!b) return;
-    onSelect(selected === b.start ? null : b.start);
+    if (!Number.isFinite(i)) return;
+    let range: TimeRange | null = null;
+    if (view === 'surveillance') {
+      const p = survData[i];
+      if (p && !p.gap) range = { start: p.mid - 2000, end: p.mid + 2000 }; // ±2 s autour de la relecture cliquée
+    } else {
+      const b = buckets[i];
+      if (b) range = { start: b.start, end: b.end };
+    }
+    if (!range) return;
+    onSelect(selected && selected.start === range.start ? null : range);
   };
 
   const pill =
@@ -166,19 +224,33 @@ export const ErrorChart = memo(function ErrorChart({
     </defs>
   );
 
-  // Zones communes : pauses, fenêtre sélectionnée, rattrapages (bande hachurée), points écrêtés
+  // Zones communes : pauses, fenêtre sélectionnée, rattrapages (bande hachurée)
+  const selectionOverlay = (yAxisId?: string) =>
+    selected == null ? null : selected.end - selected.start <= 1 ? (
+      <ReferenceLine yAxisId={yAxisId} x={selected.start} stroke="#22d3ee" strokeOpacity={0.8} strokeWidth={2} />
+    ) : (
+      <ReferenceArea yAxisId={yAxisId} x1={selected.start} x2={selected.end} fill="#22d3ee" fillOpacity={0.15} stroke="#22d3ee" strokeOpacity={0.6} />
+    );
+
   const overlays = (yAxisId?: string, labels = true) => (
     <>
-      {ranges.map((r, i) => (
-        <ReferenceArea key={`p${i}`} yAxisId={yAxisId} x1={r.x1} x2={r.x2 + bucketMs} fill="#f59e0b" fillOpacity={0.1} stroke="#f59e0b" strokeOpacity={0.3} strokeDasharray="3 3"
-          label={labels ? { value: 'Pause', fill: '#fbbf24', fontSize: 10, position: 'insideTopLeft' } : undefined} />
+      {view === 'surveillance'
+        ? pauses.map((p, i) => (
+            <ReferenceArea key={`p${i}`} yAxisId={yAxisId} x1={p.start} x2={p.end ?? Math.max(now, survDomain[1])} ifOverflow="hidden"
+              fill="#f59e0b" fillOpacity={0.1} stroke="#f59e0b" strokeOpacity={0.3} strokeDasharray="3 3"
+              label={labels ? { value: 'Pause', fill: '#fbbf24', fontSize: 10, position: 'insideTopLeft' } : undefined} />
+          ))
+        : ranges.map((r, i) => (
+            <ReferenceArea key={`p${i}`} yAxisId={yAxisId} x1={r.x1} x2={r.x2 + bucketMs} fill="#f59e0b" fillOpacity={0.1} stroke="#f59e0b" strokeOpacity={0.3} strokeDasharray="3 3"
+              label={labels ? { value: 'Pause', fill: '#fbbf24', fontSize: 10, position: 'insideTopLeft' } : undefined} />
+          ))}
+      {view === 'surveillance' && survCatchUps.filter(c => !c.afterPause).map(c => (
+        <ReferenceArea key={`cu${c.t}`} yAxisId={yAxisId} x1={c.t - c.dt} x2={c.t} fill="url(#hatch-band)" stroke="#f59e0b" strokeOpacity={0.5} strokeDasharray="2 2" />
       ))}
-      {view !== 'cadence' && view !== 'niveaux' && catchUps.map(b => (
+      {view === 'fichier' && catchUps.map(b => (
         <ReferenceArea key={`cu${b.start}`} yAxisId={yAxisId} x1={b.start} x2={b.end} fill="url(#hatch-band)" stroke="#f59e0b" strokeOpacity={0.5} strokeDasharray="2 2" />
       ))}
-      {selected != null && (
-        <ReferenceArea yAxisId={yAxisId} x1={selected} x2={selected + bucketMs} fill="#22d3ee" fillOpacity={0.15} stroke="#22d3ee" strokeOpacity={0.6} />
-      )}
+      {selectionOverlay(yAxisId)}
     </>
   );
 
@@ -191,7 +263,9 @@ export const ErrorChart = memo(function ErrorChart({
             <span className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold ${pill.c}`}>{pill.t}</span>
           </div>
           <p className="text-slate-400 text-sm mt-0.5">
-            Fenêtres de {windowLabel(settings.windowSec)} — l'axe est l'heure de <em>détection</em> par l'outil
+            {view === 'surveillance'
+              ? <>Relecture instantanée — l'axe est l'heure de <em>détection</em> par l'outil</>
+              : <>Fenêtres de {windowLabel(settings.windowSec)} — l'axe est l'heure de <em>détection</em> par l'outil</>}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -200,23 +274,25 @@ export const ErrorChart = memo(function ErrorChart({
               <button
                 key={v.id}
                 onClick={() => setView(v.id)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${view === v.id ? v.active : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${view === v.id ? v.active : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
               >
-                {v.label}
+                {v.icon}{v.label}
               </button>
             ))}
           </div>
+          {view !== 'surveillance' && (
           <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-1" title="Taille de la fenêtre d'agrégation (et d'alerte)">
             {WINDOW_OPTIONS.map(w => (
               <button
                 key={w}
-                onClick={() => onSettingsChange({ ...settings, windowSec: w })}
+                onClick={() => { onSelect(null); onSettingsChange({ ...settings, windowSec: w }); }}
                 className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-all ${settings.windowSec === w ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
               >
                 {windowLabel(w)}
               </button>
             ))}
           </div>
+          )}
           {canClip && (
             <button
               onClick={() => setClip(c => !c)}
@@ -235,27 +311,47 @@ export const ErrorChart = memo(function ErrorChart({
         <strong>{viewDef.title}</strong> — {viewDef.desc}
       </div>
 
-      {buckets.length === 0 ? (
+      {(view === 'surveillance' ? samples.length === 0 : buckets.length === 0) ? (
         <div className="h-72 flex items-center justify-center text-slate-600">En attente de données…</div>
-      ) : view === 'surveillance' || view === 'fichier' ? (
+      ) : view === 'surveillance' ? (
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart accessibilityLayer={false} data={view === 'surveillance' ? (survData as any) : data} margin={{ top: 14, right: 10, left: 0, bottom: 5 }} onClick={handleClick} style={{ cursor: 'pointer' }}>
+            <AreaChart accessibilityLayer={false} data={survData} margin={{ top: 14, right: 10, left: 0, bottom: 5 }} onClick={handleClick} style={{ cursor: 'pointer' }}>
+              {defs}
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+              <XAxis dataKey="mid" type="number" scale="time" domain={survDomain} allowDataOverflow tickFormatter={(v: number) => fmtTime(v)} tickCount={6}
+                stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} />
+              <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false}
+                domain={clip ? [0, survCap] : [0, (m: number) => Math.max(m, 3)]} allowDataOverflow={clip} width={34} />
+              <Tooltip content={<SampleTooltip />} cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }} isAnimationActive={false} />
+              {overlays(undefined)}
+              {LEVELS.map(l => (
+                <Area key={l.key} type="linear" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={2} fill={`url(#${l.grad})`}
+                  dot={(pr: any) => (pr.value > 0
+                    ? <circle key={`d${l.key}${pr.index}`} cx={pr.cx} cy={pr.cy} r={3} fill={l.color} />
+                    : <g key={`d${l.key}${pr.index}`} />)}
+                  connectNulls={false} isAnimationActive={false} />
+              ))}
+              {clippedSamples.map(c => (
+                <ReferenceDot key={`c${c.t}`} x={c.t} y={survCap} r={0}
+                  label={{ value: `▲ ${c.critical + c.major + c.minor + c.warning}`, fill: '#fbbf24', fontSize: 11, fontWeight: 700, position: 'insideBottom' }} />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      ) : view === 'fichier' ? (
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart accessibilityLayer={false} data={data} margin={{ top: 14, right: 10, left: 0, bottom: 5 }} onClick={handleClick} style={{ cursor: 'pointer' }}>
               {defs}
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
               <XAxis {...xAxisProps} stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} />
-              <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false}
-                domain={view === 'surveillance' && clip ? [0, cap] : [0, 'auto']} allowDataOverflow={view === 'surveillance' && clip} width={34} />
+              <YAxis stroke="#64748b" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} domain={[0, 'auto']} width={34} />
               <Tooltip content={<BucketTooltip mode={view} />} cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }} isAnimationActive={false} />
               {overlays(undefined)}
               {LEVELS.map(l => (
-                <Area key={l.key} type={view === 'fichier' ? 'monotone' : 'linear'} dataKey={view === 'fichier' ? (l.cum as string) : l.key} name={l.name}
-                  stroke={l.color} strokeWidth={2} fill={`url(#${l.grad})`} dot={{ r: 2, fill: l.color, strokeWidth: 0 }}
-                  connectNulls={false} isAnimationActive={false} />
-              ))}
-              {clippedBuckets.map(b => (
-                <ReferenceDot key={`c${b.start}`} x={b.start + bucketMs / 2} y={cap} r={0}
-                  label={{ value: `▲ ${b.total}`, fill: '#fbbf24', fontSize: 11, fontWeight: 700, position: 'insideBottom' }} />
+                <Area key={l.key} type="monotone" dataKey={l.cum as string} name={l.name} stroke={l.color} strokeWidth={2}
+                  fill={`url(#${l.grad})`} dot={{ r: 2, fill: l.color, strokeWidth: 0 }} isAnimationActive={false} />
               ))}
             </AreaChart>
           </ResponsiveContainer>
@@ -354,7 +450,11 @@ export const ErrorChart = memo(function ErrorChart({
         )}
         <span><span className="inline-block w-3 h-2.5 rounded-sm align-middle mr-1" style={{ background: 'repeating-linear-gradient(45deg,#f59e0b 0 2px,transparent 2px 4px)' }} />Hachuré = rattrapage (vu d'un coup, étalement inconnu)</span>
         <span><span className="inline-block w-3 h-2.5 bg-amber-500/30 border border-dashed border-amber-500/60 align-middle mr-1" />Pause</span>
-        <span className="text-slate-600">Plage : {fmtDuration(buckets.length * bucketMs)} (60 fenêtres max)</span>
+        <span className="text-slate-600">
+          {view === 'surveillance'
+            ? `Plage : ${fmtDuration(Math.max(0, survDomain[1] - survDomain[0]))} (${samples.length} relectures conservées)`
+            : `Plage : ${fmtDuration(buckets.length * bucketMs)} (60 fenêtres max)`}
+        </span>
       </div>
 
       {/* Réglage des alertes */}

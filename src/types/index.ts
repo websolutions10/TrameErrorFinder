@@ -40,6 +40,8 @@ export interface DetectionEvent {
   warning: number;
   /** Gros paquet vu d'un coup après une pause / une longue absence : étalement réel inconnu */
   catchUp: boolean;
+  /** La relecture suit une reprise après pause */
+  afterPause?: boolean;
 }
 
 export interface PauseSpan {
