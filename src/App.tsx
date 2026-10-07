@@ -230,8 +230,7 @@ export default function App() {
             <FileText className="w-16 h-16 text-slate-700 mx-auto mb-4" />
             <h3 className="text-slate-400 text-xl font-semibold mb-2">Aucun fichier sélectionné</h3>
             <p className="text-slate-600 max-w-lg mx-auto">
-              Cliquez sur le bouton ci-dessus pour choisir votre fichier{' '}
-              <code className="text-violet-400 font-mono">testtrameerror.txt</code>
+              Cliquez sur le bouton ci-dessus pour choisir le fichier à surveiller.
             </p>
           </div>
         )}
