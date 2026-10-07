@@ -56,6 +56,7 @@ export function useRealFileWatcher() {
   const [pauses, setPauses] = useState<PauseSpan[]>([]);
   const [sessionStart, setSessionStart] = useState<number | null>(null);
   const [baselineCount, setBaselineCount] = useState(0);
+  const [baselineLevels, setBaselineLevels] = useState<Record<ErrorSeverity, number>>({ critical: 0, major: 0, minor: 0, warning: 0 });
 
   const [rules, setRules] = useState<MonitoringRule[]>(() => {
     const saved = localStorage.getItem('monitoringRules');
@@ -100,6 +101,7 @@ export function useRealFileWatcher() {
     setPauses([]);
     setSessionStart(null);
     setBaselineCount(0);
+    setBaselineLevels({ critical: 0, major: 0, minor: 0, warning: 0 });
   }, []);
 
   const parseContent = useCallback((content: string, force = false) => {
@@ -148,6 +150,12 @@ export function useRealFileWatcher() {
       baselineDone.current = true;
       setSessionStart(nowMs);
       setBaselineCount(found.length);
+      setBaselineLevels({
+        critical: found.filter(e => e.severity === 'critical').length,
+        major: found.filter(e => e.severity === 'major').length,
+        minor: found.filter(e => e.severity === 'minor').length,
+        warning: found.filter(e => e.severity === 'warning').length,
+      });
     } else if (freshTotal > 0) {
       const dt = Math.max(1, nowMs - prevRead);
       const catchUp = resumedRef.current || dt > CATCHUP_MS;
@@ -313,7 +321,7 @@ export function useRealFileWatcher() {
     fallbackMode,
     isWatching, isPaused, fileName, lastModified, lineCount,
     fileContent, errors, stats,
-    events, pauses, sessionStart, baselineCount,
+    events, pauses, sessionStart, baselineCount, baselineLevels,
     selectFile, stopWatching, togglePause, forceRefresh, clearAll,
     rules,
     setRules,

@@ -17,6 +17,11 @@ export interface Bucket {
   catchUpDt: number;
   paused: boolean;
   cumul: number;
+  /** Total cumulé par niveau depuis l'ouverture du fichier (historique d'ouverture inclus) */
+  cumulCritical: number;
+  cumulMajor: number;
+  cumulMinor: number;
+  cumulWarning: number;
   normal: number | null;
 }
 
@@ -57,9 +62,11 @@ export function buildBuckets(p: {
   now: number;
   bucketMs: number;
   baselineCount: number;
+  baselineLevels?: Record<ErrorSeverity, number>;
   maxBuckets?: number;
 }): Bucket[] {
   const { events, pauses, sessionStart, now, bucketMs, baselineCount } = p;
+  const bl = p.baselineLevels ?? { critical: 0, major: 0, minor: 0, warning: 0 };
   const max = p.maxBuckets ?? MAX_BUCKETS;
   if (sessionStart == null) return [];
   const first = Math.floor(sessionStart / bucketMs) * bucketMs;
@@ -68,7 +75,13 @@ export function buildBuckets(p: {
   const n = Math.round((last - firstShown) / bucketMs) + 1;
 
   let cumul = baselineCount;
-  for (const e of events) if (e.t < firstShown) cumul += sum(e);
+  const cl = { ...bl };
+  for (const e of events) {
+    if (e.t < firstShown) {
+      cumul += sum(e);
+      cl.critical += e.critical; cl.major += e.major; cl.minor += e.minor; cl.warning += e.warning;
+    }
+  }
 
   const buckets: Bucket[] = Array.from({ length: n }, (_, i) => {
     const start = firstShown + i * bucketMs;
@@ -76,7 +89,8 @@ export function buildBuckets(p: {
     const paused = pauses.some(s => s.start < end && (s.end ?? Math.max(now, end)) > start);
     return {
       start, end, critical: 0, major: 0, minor: 0, warning: 0, total: 0,
-      catchUp: false, catchUpCount: 0, catchUpDt: 0, paused, cumul: 0, normal: null,
+      catchUp: false, catchUpCount: 0, catchUpDt: 0, paused, cumul: 0,
+      cumulCritical: 0, cumulMajor: 0, cumulMinor: 0, cumulWarning: 0, normal: null,
     };
   });
 
@@ -92,6 +106,8 @@ export function buildBuckets(p: {
   buckets.forEach((b, i) => {
     cumul += b.total;
     b.cumul = cumul;
+    cl.critical += b.critical; cl.major += b.major; cl.minor += b.minor; cl.warning += b.warning;
+    b.cumulCritical = cl.critical; b.cumulMajor = cl.major; b.cumulMinor = cl.minor; b.cumulWarning = cl.warning;
     const prev = buckets.slice(Math.max(0, i - 10), i).filter(x => !x.catchUp && !x.paused);
     b.normal = prev.length >= 3 ? prev.reduce((a, x) => a + x.total, 0) / prev.length : null;
   });

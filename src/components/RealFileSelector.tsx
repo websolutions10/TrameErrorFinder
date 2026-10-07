@@ -33,7 +33,7 @@ export function RealFileSelector({
           </div>
           <div>
             <h2 className="text-white font-semibold text-lg">
-              {isWatching ? '📡 Surveillance fichier active' : '📁 Sélectionner un fichier'}
+              {isWatching ? 'Surveillance fichier active' : '📁 Sélectionner un fichier'}
             </h2>
             <p className="text-slate-400 text-sm">
               {isWatching

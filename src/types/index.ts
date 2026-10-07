@@ -2,8 +2,8 @@ export type ErrorSeverity = 'critical' | 'major' | 'minor' | 'warning';
 
 export type ChartMode = 'surveillance' | 'fichier'; // (hérité, plus utilisé par le graphique)
 
-/** Vue du graphique : cadence + cumul, ou une mini-courbe par niveau */
-export type ChartView = 'cadence' | 'niveaux';
+/** Vues du graphique : courbes « Surveillance » (nouvelles) et « Depuis le fichier » (cumul), barres cadence + cumul, mini-échelles par niveau */
+export type ChartView = 'surveillance' | 'fichier' | 'cadence' | 'niveaux';
 
 export interface MonitoringRule {
   keyword: string;

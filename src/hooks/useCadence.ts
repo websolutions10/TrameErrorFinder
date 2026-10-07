@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DetectionEvent, PauseSpan } from '../types';
+import type { DetectionEvent, PauseSpan, ErrorSeverity } from '../types';
 import {
   AlertSettings, DEFAULT_ALERT_SETTINGS, buildBuckets, evaluateAlerts,
 } from '../utils/cadence';
@@ -38,9 +38,10 @@ export function useCadence(p: {
   pauses: PauseSpan[];
   sessionStart: number | null;
   baselineCount: number;
+  baselineLevels: Record<ErrorSeverity, number>;
   isWatching: boolean;
 }) {
-  const { events, pauses, sessionStart, baselineCount, isWatching } = p;
+  const { events, pauses, sessionStart, baselineCount, baselineLevels, isWatching } = p;
   const [settings, setSettings] = useState<AlertSettings>(loadSettings);
   const [tick, setTick] = useState(() => Date.now());
 
@@ -59,8 +60,8 @@ export function useCadence(p: {
   const bucketMs = settings.windowSec * 1000;
 
   const buckets = useMemo(
-    () => buildBuckets({ events, pauses, sessionStart, now, bucketMs, baselineCount }),
-    [events, pauses, sessionStart, now, bucketMs, baselineCount],
+    () => buildBuckets({ events, pauses, sessionStart, now, bucketMs, baselineCount, baselineLevels }),
+    [events, pauses, sessionStart, now, bucketMs, baselineCount, baselineLevels],
   );
   const alert = useMemo(
     () => evaluateAlerts({ events, now, sessionStart, settings }),

@@ -29,6 +29,7 @@ export default function App() {
   pauses,
   sessionStart,
   baselineCount,
+  baselineLevels,
   selectFile,
   stopWatching,
   togglePause,
@@ -43,7 +44,7 @@ export default function App() {
   const isActive = isWatching && !isPaused && !fallbackMode;
 
   const { settings, setSettings, bucketMs, buckets, alert } = useCadence({
-    events, pauses, sessionStart, baselineCount, isWatching,
+    events, pauses, sessionStart, baselineCount, baselineLevels, isWatching,
   });
 
   // Sélection d'une fenêtre sur le graphique / d'un motif → filtre le journal
